@@ -1,0 +1,131 @@
+Parameters:
+  PrefixGitHubRepository:
+    Type: String
+
+Resources:
+  OidcProviderGitHub:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [ sts.amazonaws.com ]
+      ThumbprintList: 
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  RoleGitHubActionsCloudFormationDeploy:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !Ref OidcProviderGitHub
+            Condition:
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${PrefixGitHubRepository}
+      Policies:
+        - PolicyName: CloudFormationDeploy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - cloudformation:*
+                  - iam:PassRole
+                Resource: "*"
+
+  RoleGitHubActionsSecureSsmParameterDeploy:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !Ref OidcProviderGitHub
+            Condition:
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${PrefixGitHubRepository}
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+      Policies:
+        - PolicyName: KmsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:GetPublicKey
+                  - kms:Decrypt
+                  - kms:ListKeyPolicies
+                  - kms:UntagResource
+                  - kms:ListRetirableGrants
+                  - kms:GetKeyPolicy
+                  - kms:ListResourceTags
+                  - kms:DisableKey
+                  - kms:ListGrants
+                  - kms:UpdateAlias
+                  - kms:GetParametersForImport
+                  - kms:DescribeCustomKeyStores
+                  - kms:ListKeys
+                  - kms:TagResource
+                  - kms:Encrypt
+                  - kms:GetKeyRotationStatus
+                  - kms:ScheduleKeyDeletion
+                  - kms:ListAliases
+                  - kms:CreateAlias
+                  - kms:DescribeKey
+                  - kms:CreateKey
+                  - kms:DeleteAlias
+                Resource: "*"
+        - PolicyName: SsmParameterWrite
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:RemoveTagsFromResource
+                  - ssm:AddTagsToResource
+                  - ssm:DeleteParameters
+                Resource: "*"
+
+  RoleCloudFormationDeploy:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  BucketLambdaArtifact:
+    Type: AWS::S3::Bucket
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 7
+            Status: Enabled
+
+Outputs:
+  BucketNameLambdaArtifact:
+    Value: !Ref BucketLambdaArtifact
+
+  RoleArnGitHubActionsCloudFormationDeploy:
+    Value: !GetAtt RoleGitHubActionsCloudFormationDeploy.Arn
+
+  RoleArnGitHubActionsSecureSsmParameterDeploy:
+    Value: !GetAtt RoleGitHubActionsSecureSsmParameterDeploy.Arn
+
+  RoleArnCloudFormationDeploy:
+    Value: !GetAtt RoleCloudFormationDeploy.Arn
+
